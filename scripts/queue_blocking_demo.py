@@ -5,7 +5,7 @@ import time
 
 from common import create_client
 
-QUEUE_NAME = "bounded-queue"
+QUEUE_NAME = "bounded-q"
 CAPACITY = 10
 
 
@@ -33,7 +33,14 @@ def main() -> None:
         thread.start()
 
         time.sleep(3)
-        print(f"After 3s, blocked thread still waiting: {thread.is_alive()}")
+        is_blocking = thread.is_alive()
+        print(f"After 3s, blocked thread still waiting: {is_blocking}")
+
+        if not is_blocking:
+            print(
+                "WARNING: put() did not block. Queue may not be using bounded config. "
+                "Restart Hazelcast containers to reload hazelcast.yaml."
+            )
 
         removed = queue.take()
         print(f"Removed one element ({removed}) to free one slot.")

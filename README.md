@@ -54,13 +54,21 @@ Override with environment variables if needed:
 
 ### 3) Bounded Queue
 
+- Queue name: `bounded-q`
+- Capacity: `10` (configured in `hazelcast.yaml`)
+
 - Blocking behavior demo (no active consumers):
   - `python .\scripts\queue_blocking_demo.py`
 
 - Producer + 2 consumers (run in 3 terminals):
   - Terminal A: `python .\scripts\queue_consumer.py --id 1`
   - Terminal B: `python .\scripts\queue_consumer.py --id 2`
-  - Terminal C: `python .\scripts\queue_producer.py`
+  - Terminal C: `python .\scripts\queue_producer.py --clear`
+
+Notes:
+- Each queue item is consumed by exactly one consumer (work-queue pattern).
+- With two consumers, values `1..100` are split between them in non-deterministic order.
+- If there are no readers and queue is full, `put()` blocks until a consumer removes an item.
 
 ## Suggested Run Order
 
