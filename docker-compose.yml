@@ -1,4 +1,5 @@
 services:
+  # Hazelcast Cluster (3 nodes)
   hazelcast1:
     image: hazelcast/hazelcast:5.6.0
     ports:
@@ -32,7 +33,7 @@ services:
   management-center:
     image: hazelcast/management-center:5.6.0
     ports:
-      - "8080:8080"
+      - "8081:8080"
     depends_on:
       - hazelcast1
       - hazelcast2
@@ -40,3 +41,71 @@ services:
     environment:
       - MC_DEFAULT_CLUSTER=dev
       - MC_DEFAULT_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
+
+  # Database for counter-service
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_DB=counter_db
+    ports:
+      - "5432:5432"
+
+  # Logging Services (3 instances)
+  logging1:
+    build: .
+    environment:
+      - HZ_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
+      - SERVICE_ID=logging1
+    command: uvicorn services.logging.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      - hazelcast1
+      - hazelcast2
+      - hazelcast3
+
+  logging2:
+    build: .
+    environment:
+      - HZ_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
+      - SERVICE_ID=logging2
+    command: uvicorn services.logging.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      - hazelcast1
+      - hazelcast2
+      - hazelcast3
+
+  logging3:
+    build: .
+    environment:
+      - HZ_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
+      - SERVICE_ID=logging3
+    command: uvicorn services.logging.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      - hazelcast1
+      - hazelcast2
+      - hazelcast3
+
+  # Counter Service
+  counter:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/counter_db
+    command: uvicorn services.counter.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      - db
+
+  # Facade Service
+  facade:
+    build: .
+    environment:
+      - LOGGING_SERVICES=logging1:8000,logging2:8000,logging3:8000
+      - COUNTER_SERVICE=counter:8000
+    command: uvicorn services.facade.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - logging1
+      - logging2
+      - logging3
+      - counter
