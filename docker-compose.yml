@@ -42,6 +42,13 @@ services:
       - MC_DEFAULT_CLUSTER=dev
       - MC_DEFAULT_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
 
+  # Config Server — service registry
+  config-server:
+    build: .
+    command: uvicorn services.config_server.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8002:8000"
+
   # Database for counter-service
   db:
     image: postgres:15
@@ -58,53 +65,73 @@ services:
     environment:
       - HZ_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
       - SERVICE_ID=logging1
+      - SERVICE_ADDRESS=logging1:8000
+      - CONFIG_SERVER=config-server:8000
     command: uvicorn services.logging.main:app --host 0.0.0.0 --port 8000
     depends_on:
       - hazelcast1
       - hazelcast2
       - hazelcast3
+      - config-server
 
   logging2:
     build: .
     environment:
       - HZ_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
       - SERVICE_ID=logging2
+      - SERVICE_ADDRESS=logging2:8000
+      - CONFIG_SERVER=config-server:8000
     command: uvicorn services.logging.main:app --host 0.0.0.0 --port 8000
     depends_on:
       - hazelcast1
       - hazelcast2
       - hazelcast3
+      - config-server
 
   logging3:
     build: .
     environment:
       - HZ_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
       - SERVICE_ID=logging3
+      - SERVICE_ADDRESS=logging3:8000
+      - CONFIG_SERVER=config-server:8000
     command: uvicorn services.logging.main:app --host 0.0.0.0 --port 8000
     depends_on:
       - hazelcast1
       - hazelcast2
       - hazelcast3
+      - config-server
 
-  # Counter Service
+  # Counter Service — consumes from Hazelcast queue, stores to PostgreSQL
   counter:
     build: .
     environment:
       - DATABASE_URL=postgresql://user:pass@db:5432/counter_db
+      - HZ_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
+      - SERVICE_ADDRESS=counter:8000
+      - CONFIG_SERVER=config-server:8000
     command: uvicorn services.counter.main:app --host 0.0.0.0 --port 8000
     depends_on:
       - db
+      - hazelcast1
+      - hazelcast2
+      - hazelcast3
+      - config-server
 
-  # Facade Service
+  # Facade Service — API gateway
   facade:
     build: .
     environment:
-      - LOGGING_SERVICES=logging1:8000,logging2:8000,logging3:8000
-      - COUNTER_SERVICE=counter:8000
+      - HZ_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
+      - CONFIG_SERVER=config-server:8000
     command: uvicorn services.facade.main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     depends_on:
+      - hazelcast1
+      - hazelcast2
+      - hazelcast3
+      - config-server
       - logging1
       - logging2
       - logging3

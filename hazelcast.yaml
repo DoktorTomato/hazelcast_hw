@@ -19,3 +19,5 @@ hazelcast:
   queue:
     bounded-q:
       max-size: 10
+    counter-queue:
+      max-size: 0  # unbounded — messages accumulate when counter-service is down
