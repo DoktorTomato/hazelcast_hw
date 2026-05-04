@@ -1,5 +1,21 @@
 services:
-  # Hazelcast Cluster (3 nodes)
+  # ── Consul — Service Registry, Service Discovery, Config Server ──────────
+  consul:
+    image: hashicorp/consul:1.17
+    ports:
+      - "8500:8500"
+    command: agent -server -bootstrap-expect=1 -client=0.0.0.0 -ui
+
+  # Seeds Consul KV with Hazelcast / MQ config, then exits
+  consul-init:
+    build: .
+    command: python scripts/seed_consul.py
+    environment:
+      - CONSUL_HOST=consul:8500
+    depends_on:
+      - consul
+
+  # ── Hazelcast Cluster (3 nodes) ───────────────────────────────────────────
   hazelcast1:
     image: hazelcast/hazelcast:5.6.0
     ports:
@@ -42,14 +58,7 @@ services:
       - MC_DEFAULT_CLUSTER=dev
       - MC_DEFAULT_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
 
-  # Config Server — service registry
-  config-server:
-    build: .
-    command: uvicorn services.config_server.main:app --host 0.0.0.0 --port 8000
-    ports:
-      - "8002:8000"
-
-  # Database for counter-service
+  # ── Database ──────────────────────────────────────────────────────────────
   db:
     image: postgres:15
     environment:
@@ -59,80 +68,135 @@ services:
     ports:
       - "5432:5432"
 
-  # Logging Services (3 instances)
+  # ── Logging Services (3 instances) ───────────────────────────────────────
   logging1:
     build: .
     environment:
-      - HZ_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
       - SERVICE_ID=logging1
       - SERVICE_ADDRESS=logging1:8000
-      - CONFIG_SERVER=config-server:8000
+      - CONSUL_HOST=consul:8500
     command: uvicorn services.logging.main:app --host 0.0.0.0 --port 8000
     depends_on:
-      - hazelcast1
-      - hazelcast2
-      - hazelcast3
-      - config-server
+      consul-init:
+        condition: service_completed_successfully
+      hazelcast1:
+        condition: service_started
+      hazelcast2:
+        condition: service_started
+      hazelcast3:
+        condition: service_started
 
   logging2:
     build: .
     environment:
-      - HZ_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
       - SERVICE_ID=logging2
       - SERVICE_ADDRESS=logging2:8000
-      - CONFIG_SERVER=config-server:8000
+      - CONSUL_HOST=consul:8500
     command: uvicorn services.logging.main:app --host 0.0.0.0 --port 8000
     depends_on:
-      - hazelcast1
-      - hazelcast2
-      - hazelcast3
-      - config-server
+      consul-init:
+        condition: service_completed_successfully
+      hazelcast1:
+        condition: service_started
+      hazelcast2:
+        condition: service_started
+      hazelcast3:
+        condition: service_started
 
   logging3:
     build: .
     environment:
-      - HZ_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
       - SERVICE_ID=logging3
       - SERVICE_ADDRESS=logging3:8000
-      - CONFIG_SERVER=config-server:8000
+      - CONSUL_HOST=consul:8500
     command: uvicorn services.logging.main:app --host 0.0.0.0 --port 8000
     depends_on:
-      - hazelcast1
-      - hazelcast2
-      - hazelcast3
-      - config-server
+      consul-init:
+        condition: service_completed_successfully
+      hazelcast1:
+        condition: service_started
+      hazelcast2:
+        condition: service_started
+      hazelcast3:
+        condition: service_started
 
-  # Counter Service — consumes from Hazelcast queue, stores to PostgreSQL
-  counter:
+  # ── Counter Services (3 instances) ───────────────────────────────────────
+  counter1:
     build: .
     environment:
+      - SERVICE_ID=counter1
+      - SERVICE_ADDRESS=counter1:8000
       - DATABASE_URL=postgresql://user:pass@db:5432/counter_db
-      - HZ_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
-      - SERVICE_ADDRESS=counter:8000
-      - CONFIG_SERVER=config-server:8000
+      - CONSUL_HOST=consul:8500
     command: uvicorn services.counter.main:app --host 0.0.0.0 --port 8000
     depends_on:
-      - db
-      - hazelcast1
-      - hazelcast2
-      - hazelcast3
-      - config-server
+      consul-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_started
+      hazelcast1:
+        condition: service_started
+      hazelcast2:
+        condition: service_started
+      hazelcast3:
+        condition: service_started
 
-  # Facade Service — API gateway
+  counter2:
+    build: .
+    environment:
+      - SERVICE_ID=counter2
+      - SERVICE_ADDRESS=counter2:8000
+      - DATABASE_URL=postgresql://user:pass@db:5432/counter_db
+      - CONSUL_HOST=consul:8500
+    command: uvicorn services.counter.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      consul-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_started
+      hazelcast1:
+        condition: service_started
+      hazelcast2:
+        condition: service_started
+      hazelcast3:
+        condition: service_started
+
+  counter3:
+    build: .
+    environment:
+      - SERVICE_ID=counter3
+      - SERVICE_ADDRESS=counter3:8000
+      - DATABASE_URL=postgresql://user:pass@db:5432/counter_db
+      - CONSUL_HOST=consul:8500
+    command: uvicorn services.counter.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      consul-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_started
+      hazelcast1:
+        condition: service_started
+      hazelcast2:
+        condition: service_started
+      hazelcast3:
+        condition: service_started
+
+  # ── Facade Service ────────────────────────────────────────────────────────
   facade:
     build: .
     environment:
-      - HZ_CLUSTER_MEMBERS=hazelcast1:5701,hazelcast2:5701,hazelcast3:5701
-      - CONFIG_SERVER=config-server:8000
+      - SERVICE_ID=facade
+      - SERVICE_ADDRESS=facade:8000
+      - CONSUL_HOST=consul:8500
     command: uvicorn services.facade.main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     depends_on:
-      - hazelcast1
-      - hazelcast2
-      - hazelcast3
-      - config-server
-      - logging1
-      - logging2
-      - logging3
-      - counter
+      consul-init:
+        condition: service_completed_successfully
+      hazelcast1:
+        condition: service_started
+      hazelcast2:
+        condition: service_started
+      hazelcast3:
+        condition: service_started
